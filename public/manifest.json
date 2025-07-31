@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Haunted Pomodoro",
+  "version": "1.0.0",
+  "description": "Focus and defeat ghostly distractions!",
+  "icons": {
+    "32": "ghost.png"
+  },
+  "action": {
+    "default_popup": "index.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "scripting",
+    "storage",
+    "notifications",
+    "alarms",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["ghost.png"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_scripts": [
+  {
+    "matches": ["<all_urls>"],
+    "js": ["contentScript.js"],
+    "run_at": "document_idle"
+  }
+]
+}

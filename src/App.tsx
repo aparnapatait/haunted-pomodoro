@@ -49,16 +49,18 @@ function App() {
         setRemainingSeconds(msg.remainingSeconds);
       }
       if (msg.type === "session-complete") {
-      handleSessionComplete(); 
-    }
-
-    if (msg.type === "request-break-minutes") {
-  chrome.runtime.sendMessage({
-    type: "respond-break-minutes",
-    breakMinutes: breakMinutes, // current state value
-  });
-}
-
+        handleSessionComplete(); 
+      }
+      if (msg.type === "restart-focus-session") {
+        setIsRunning(true);
+        setIsPaused(false);
+      }
+      if (msg.type === "request-break-minutes") {
+        chrome.runtime.sendMessage({
+          type: "respond-break-minutes",
+          breakMinutes: breakMinutes, // current state value
+        });
+      }
     });
   }, []);
 
@@ -83,32 +85,35 @@ function App() {
   }, [isRunning, isPaused]);
 
   const handleSessionComplete = () => {
-
     chrome.storage.local.get(["remainingSessions"], (res) => {
-  const current = res.remainingSessions ?? 1;
-  const updated = Math.max(0, current - 1);
-  chrome.storage.local.set({ remainingSessions: updated });
-});
-
-    if (numSessions >= 1) {
-      setRemainingSessions(prev => prev - 1);
-    } else {
-      chrome.notifications.create({
-        type: "basic",
-        iconUrl: "ghost.png",
-        title: "Pomodoro complete",
-        message: "All Pomodoro sessions complete!",
-        priority: 1,
+      const current = res.remainingSessions ?? 1;
+      const updated = Math.max(0, current - 1);
+      
+      chrome.storage.local.set({ remainingSessions: updated });
+      setRemainingSessions(updated);
+      
+      if (updated === 0) {
+        chrome.notifications.create({
+          type: "basic",
+          iconUrl: "ghost.png",
+          title: "All Pomodoro sessions complete!",
+          message: "Great job! You've completed all your focus sessions!",
+          priority: 1,
+        });
+      }
     });
-      setRemainingSessions(0);
-    }
   };
 
   const handleStart = () => {
     startTimer(focusMinutes);
     setIsRunning(true);
     setIsPaused(false);
-    chrome.storage.local.set({ focusSessionActive: true });
+    chrome.storage.local.set({ 
+      focusSessionActive: true, 
+      breakActive: false,
+      focusMinutes: focusMinutes,
+      breakMinutes: breakMinutes 
+    });
     chrome.runtime.sendMessage({ type: "start-focus-session" });
     injectGhostToAllTabs();
   };
@@ -118,21 +123,21 @@ function App() {
     setIsRunning(false);
     setRemainingSeconds(0);
     chrome.runtime.sendMessage({ type: "stop-focus-session" });
-    chrome.storage.local.set({ focusSessionActive: false });
+    chrome.storage.local.set({ focusSessionActive: false, breakActive: false });
   };
 
   const handlePause = () => {
     pauseTimer();
     setIsPaused(true);
     setIsRunning(false);
-    chrome.storage.local.set({ focusSessionActive: false });
+    chrome.storage.local.set({ focusSessionActive: false, breakActive: false });
   };
 
   const handleResume = () => {
     resumeTimer();
     setIsPaused(false);
     setIsRunning(true);
-    chrome.storage.local.set({ focusSessionActive: true });
+    chrome.storage.local.set({ focusSessionActive: true, breakActive: false });
   };
 
   const handleReset = () => {
@@ -140,7 +145,7 @@ function App() {
     setIsRunning(false);
     setRemainingSeconds(0);
     chrome.runtime.sendMessage({ type: "stop-focus-session" });
-    chrome.storage.local.set({ focusSessionActive: false });
+    chrome.storage.local.set({ focusSessionActive: false, breakActive: false });
   };
 
   const addDistraction = () => {

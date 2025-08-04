@@ -111,40 +111,46 @@ function createBreakOverlay() {
   overlay.innerHTML = `
     <h2>Time to ghosthunt!</h2>
     <p>Wanna play or take a break?</p>
-    <button id="btn-play">Play Game</button>
-    <button id="btn-break">Take a Break</button>
-    <button id="btn-work">Keep Working</button>
+    <button id="btn-play" style="margin: 10px; padding: 10px 20px; font-size: 16px; cursor: pointer;">Play Game</button>
+    <button id="btn-break" style="margin: 10px; padding: 10px 20px; font-size: 16px; cursor: pointer;">Take a Break</button>
+    <button id="btn-work" style="margin: 10px; padding: 10px 20px; font-size: 16px; cursor: pointer;">Keep Working</button>
   `;
 
   document.body.appendChild(overlay);
 
-  document.getElementById("btn-play")?.addEventListener("click", () => {
-    overlay.remove();
-    // TODO: launch game
-  });
-  document.getElementById("btn-break")?.addEventListener("click", () => {
-  overlay.remove();
+  // Add event listeners after DOM is updated
+  setTimeout(() => {
+    const playBtn = document.getElementById("btn-play");
+    const breakBtn = document.getElementById("btn-break");
+    const workBtn = document.getElementById("btn-work");
 
-  chrome.runtime.sendMessage({ type: "request-break-minutes" });
+    playBtn?.addEventListener("click", () => {
+      overlay.remove();
+      // TODO: launch game
+    });
 
-  chrome.runtime.onMessage.addListener(function handleResponse(msg) {
-    if (msg.type === "respond-break-minutes") {
-      chrome.runtime.sendMessage({
-        type: "overlay-choice",
-        choice: "break",
-        breakMinutes: msg.breakMinutes,
+    breakBtn?.addEventListener("click", () => {
+      overlay.remove();
+
+      chrome.runtime.sendMessage({ type: "request-break-minutes" });
+
+      chrome.runtime.onMessage.addListener(function handleResponse(msg) {
+        if (msg.type === "respond-break-minutes") {
+          chrome.runtime.sendMessage({
+            type: "overlay-choice",
+            choice: "break",
+            breakMinutes: msg.breakMinutes,
+          });
+          chrome.runtime.onMessage.removeListener(handleResponse);
+        }
       });
-      chrome.runtime.onMessage.removeListener(handleResponse);
-    }
-  });
-});
+    });
 
-
-document.getElementById("btn-work")?.addEventListener("click", () => {
-  overlay.remove();
-  chrome.runtime.sendMessage({ type: "overlay-choice", choice: "work" });
-});
-
+    workBtn?.addEventListener("click", () => {
+      overlay.remove();
+      chrome.runtime.sendMessage({ type: "overlay-choice", choice: "work" });
+    });
+  }, 0);
 }
 
 // Auto-inject on reload

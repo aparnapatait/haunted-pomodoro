@@ -191,35 +191,142 @@ chrome.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
         const breakMinutes = msg.breakMinutes ?? 5;
         const duration = breakMinutes * 60 * 1000;
 
-  endTime = Date.now() + duration;
-  isPaused = false;
-  clearInterval(timerId!);
+        endTime = Date.now() + duration;
+        isPaused = false;
+        clearInterval(timerId!);
 
-  timerId = setInterval(() => {
-    const now = Date.now();
-    const remaining = Math.max(0, Math.floor((endTime! - now) / 1000));
-    chrome.runtime.sendMessage({ type: "update-timer", remainingSeconds: remaining });
-    broadcastTime();
+        timerId = setInterval(() => {
+          const now = Date.now();
+          const remaining = Math.max(0, Math.floor((endTime! - now) / 1000));
+          chrome.runtime.sendMessage({ type: "update-timer", remainingSeconds: remaining });
+          broadcastTime();
 
-    if (remaining === 0) {
-      clearInterval(timerId!);
-      endTime = null;
-      timerId = null;
+          if (remaining === 0) {
+            clearInterval(timerId!);
+            endTime = null;
+            timerId = null;
 
-      chrome.notifications.create({
-        type: "basic",
-        iconUrl: "ghost.png",
-        title: "Break over!",
-        message: "Time to lock in and hunt more ghosts!",
-        priority: 2,
-      });
+            chrome.notifications.create({
+              type: "basic",
+              iconUrl: "ghost.png",
+              title: "Break over!",
+              message: "Time to lock in and hunt more ghosts!",
+              priority: 2,
+            });
+            
+            // Check if there are more sessions to do
+            chrome.storage.local.get(["remainingSessions", "focusMinutes"], (res) => {
+              const remainingSessions = res.remainingSessions || 0;
+              if (remainingSessions > 0) {
+                // Automatically start next focus session
+                chrome.storage.local.set({ focusSessionActive: true, breakActive: false });
+                chrome.runtime.sendMessage({ type: "restart-focus-session" });
+                const focusMinutes = res.focusMinutes || 25;
+                const duration = focusMinutes * 60 * 1000;
+                
+                endTime = Date.now() + duration;
+                isPaused = false;
+
+                timerId = setInterval(() => {
+                  const now = Date.now();
+                  const remaining = Math.max(0, Math.floor((endTime! - now) / 1000));
+                  chrome.runtime.sendMessage({
+                    type: "update-timer",
+                    remainingSeconds: remaining,
+                  });
+                  broadcastTime();
+                  
+                  if (remaining === 0) {
+                    chrome.storage.local.set({ breakActive: false });
+                    clearInterval(timerId!);
+                    endTime = null;
+                    timerId = null;
+                    chrome.notifications.create({
+                      type: "basic",
+                      iconUrl: "ghost.png", 
+                      title: "Pomodoro Complete!",
+                      message: "Focus time complete! Time to catch ghosts!",
+                      priority: 2,
+                    });
+                    chrome.runtime.sendMessage({ type: "session-complete" });
+                    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                      const activeTab = tabs[0];
+                      if (activeTab?.id) {
+                        chrome.tabs.sendMessage(activeTab.id, { type: "show-break-overlay" });
+                      }
+                    });
+                  }
+                }, 1000);
+                
+                // Inject ghost into all tabs
+                chrome.tabs.query({}, (tabs) => {
+                  for (const tab of tabs) {
+                    if (tab.id && tab.url?.startsWith("http")) {
+                      chrome.tabs.sendMessage(tab.id, { type: "inject-ghost" });
+                    }
+                  }
+                });
+              } else {
+                // All sessions complete
+                chrome.storage.local.set({ focusSessionActive: false, breakActive: false });
+                chrome.tabs.query({}, (tabs) => {
+                  for (const tab of tabs) {
+                    if (tab.id) {
+                      chrome.tabs.sendMessage(tab.id, { type: "remove-ghost" });
+                    }
+                  }
+                });
+              }
+            });
+          }
+        }, 1000);
     }
-  }, 1000);
-}
 
     if (msg.choice === "work") {
       // Restart focus session logic
-      chrome.storage.local.set({ focusSessionActive: true });
+      chrome.storage.local.set({ focusSessionActive: true, breakActive: false });
+      
+      // Get the focus time from storage and restart the timer
+      chrome.storage.local.get(["focusMinutes"], (res) => {
+        const focusMinutes = res.focusMinutes || 25;
+        const duration = focusMinutes * 60 * 1000;
+        
+        endTime = Date.now() + duration;
+        isPaused = false;
+        clearInterval(timerId!);
+
+        timerId = setInterval(() => {
+          const now = Date.now();
+          const remaining = Math.max(0, Math.floor((endTime! - now) / 1000));
+          chrome.runtime.sendMessage({
+            type: "update-timer",
+            remainingSeconds: remaining,
+          });
+          broadcastTime();
+          
+          if (remaining === 0) {
+            chrome.storage.local.set({ breakActive: false });
+            clearInterval(timerId!);
+            endTime = null;
+            timerId = null;
+            chrome.notifications.create({
+              type: "basic",
+              iconUrl: "ghost.png", 
+              title: "Pomodoro Complete!",
+              message: "Focus time complete! Time to catch ghosts!",
+              priority: 2,
+            });
+            chrome.runtime.sendMessage({ type: "session-complete" });
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+              const activeTab = tabs[0];
+              if (activeTab?.id) {
+                chrome.tabs.sendMessage(activeTab.id, { type: "show-break-overlay" });
+              }
+            });
+          }
+        }, 1000);
+      });
+
       chrome.runtime.sendMessage({ type: "restart-focus-session" });
       chrome.tabs.query({}, (tabs) => {
         for (const tab of tabs) {
@@ -260,7 +367,8 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
       const isFocus = res.focusSessionActive === true;
       const isBreak = res.breakActive === true;
 
-      if (!isFocus || isBreak) return; 
+      // Only show distraction alerts during active focus sessions (not during breaks or when paused)
+      if (!isFocus || isBreak || isPaused) return; 
 
       chrome.tabs.sendMessage(tabId, { type: "inject-ghost" });
 
@@ -286,7 +394,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     const isFocus = res.focusSessionActive === true;
     const isBreak = res.breakActive === true;
 
-    if (!isFocus || isBreak) return;
+    // Only show distraction alerts during active focus sessions (not during breaks or when paused)
+    if (!isFocus || isBreak || isPaused) return;
 
     chrome.tabs.sendMessage(tabId, { type: "inject-ghost" });
 

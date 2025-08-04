@@ -124,8 +124,21 @@ function createBreakOverlay() {
   });
   document.getElementById("btn-break")?.addEventListener("click", () => {
   overlay.remove();
-  chrome.runtime.sendMessage({ type: "overlay-choice", choice: "break" });
+
+  chrome.runtime.sendMessage({ type: "request-break-minutes" });
+
+  chrome.runtime.onMessage.addListener(function handleResponse(msg) {
+    if (msg.type === "respond-break-minutes") {
+      chrome.runtime.sendMessage({
+        type: "overlay-choice",
+        choice: "break",
+        breakMinutes: msg.breakMinutes,
+      });
+      chrome.runtime.onMessage.removeListener(handleResponse);
+    }
+  });
 });
+
 
 document.getElementById("btn-work")?.addEventListener("click", () => {
   overlay.remove();

@@ -12,6 +12,7 @@ function App() {
   const [isPaused, setIsPaused] = useState(false);
   const [numSessions, setRemainingSessions] = useState(1);
 
+  // sets how many Pomodoro sessions
   useEffect(() => {
   chrome.storage.local.get(["remainingSessions"], (res) => {
     if (res.remainingSessions !== undefined) {
@@ -20,10 +21,11 @@ function App() {
   });
 }, []);
 
-useEffect(() => {
-  chrome.storage.local.set({ remainingSessions: numSessions });
-}, [numSessions]);
+  useEffect(() => {
+    chrome.storage.local.set({ remainingSessions: numSessions });
+  }, [numSessions]);
 
+  // set distraction tabs list
   useEffect(() => {
   chrome.storage.local.get(["distractionList"], (res) => {
     if (res.distractionList) {
@@ -49,6 +51,14 @@ useEffect(() => {
       if (msg.type === "session-complete") {
       handleSessionComplete(); 
     }
+
+    if (msg.type === "request-break-minutes") {
+  chrome.runtime.sendMessage({
+    type: "respond-break-minutes",
+    breakMinutes: breakMinutes, // current state value
+  });
+}
+
     });
   }, []);
 
@@ -87,7 +97,7 @@ useEffect(() => {
         type: "basic",
         iconUrl: "ghost.png",
         title: "Pomodoro complete",
-        message: "🎉 All Pomodoro sessions complete!",
+        message: "All Pomodoro sessions complete!",
         priority: 1,
     });
       setRemainingSessions(0);
@@ -115,12 +125,14 @@ useEffect(() => {
     pauseTimer();
     setIsPaused(true);
     setIsRunning(false);
+    chrome.storage.local.set({ focusSessionActive: false });
   };
 
   const handleResume = () => {
     resumeTimer();
     setIsPaused(false);
     setIsRunning(true);
+    chrome.storage.local.set({ focusSessionActive: true });
   };
 
   const handleReset = () => {

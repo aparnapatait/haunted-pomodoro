@@ -19,6 +19,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       });
       broadcastTime();
       if (remaining === 0) {
+        chrome.storage.local.set({ breakActive: false });
         clearInterval(timerId!);
         endTime = null;
         timerId = null;
@@ -44,6 +45,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   else if (message.command === 'stop') {
+    chrome.storage.local.set({ breakActive: false });
     clearInterval(timerId!);
     timerId = null;
     endTime = null;
@@ -90,6 +92,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   else if (message.command === 'reset') {
+    chrome.storage.local.set({ breakActive: false });
     clearInterval(timerId!);
     timerId = null;
     endTime = null;
@@ -183,34 +186,36 @@ chrome.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
 chrome.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
   if (msg.type === "overlay-choice") {
     if (msg.choice === "break") {
-      // Start break timer
-      const breakMinutes = 5; // you could fetch from storage or define elsewhere
-      const duration = breakMinutes * 60 * 1000;
-      endTime = Date.now() + duration;
-      isPaused = false;
+        chrome.storage.local.set({ focusSessionActive: false, breakActive: true });
+        console.log("set break to is active");
+        const breakMinutes = msg.breakMinutes ?? 5;
+        const duration = breakMinutes * 60 * 1000;
+
+  endTime = Date.now() + duration;
+  isPaused = false;
+  clearInterval(timerId!);
+
+  timerId = setInterval(() => {
+    const now = Date.now();
+    const remaining = Math.max(0, Math.floor((endTime! - now) / 1000));
+    chrome.runtime.sendMessage({ type: "update-timer", remainingSeconds: remaining });
+    broadcastTime();
+
+    if (remaining === 0) {
       clearInterval(timerId!);
+      endTime = null;
+      timerId = null;
 
-      timerId = setInterval(() => {
-        const now = Date.now();
-        const remaining = Math.max(0, Math.floor((endTime! - now) / 1000));
-        chrome.runtime.sendMessage({ type: "update-timer", remainingSeconds: remaining });
-        broadcastTime();
-
-        if (remaining === 0) {
-          clearInterval(timerId!);
-          endTime = null;
-          timerId = null;
-
-          chrome.notifications.create({
-            type: "basic",
-            iconUrl: "ghost.png",
-            title: "Break over!",
-            message: "Time to lock in and hunt more ghosts!",
-            priority: 2,
-          });
-        }
-      }, 1000);
+      chrome.notifications.create({
+        type: "basic",
+        iconUrl: "ghost.png",
+        title: "Break over!",
+        message: "Time to lock in and hunt more ghosts!",
+        priority: 2,
+      });
     }
+  }, 1000);
+}
 
     if (msg.choice === "work") {
       // Restart focus session logic
@@ -251,23 +256,24 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
   chrome.tabs.get(tabId, (tab) => {
     if (!tab.url) return;
 
-    chrome.storage.local.get(["focusSessionActive", "distractionList"], (res) => {
-      if (res.focusSessionActive) {
-        chrome.tabs.sendMessage(tabId, { type: "inject-ghost" });
+    chrome.storage.local.get(["focusSessionActive", "breakActive", "distractionList"], (res) => {
+      const isFocus = res.focusSessionActive === true;
+      const isBreak = res.breakActive === true;
 
-        const distractions: string[] = res.distractionList || [];
-        if (distractions.some(domain => tab.url!.includes(domain))) {
-            if (tab.url) {
-  const hostname = new URL(tab.url).hostname;
-  chrome.notifications.create({
-    type: "basic",
-    iconUrl: "ghost.png",
-    title: "👻 Focus Alert!",
-    message: `Avoid ${hostname} — it's a distraction!`,
-    priority: 2,
-  });
-}
-        }
+      if (!isFocus || isBreak) return; 
+
+      chrome.tabs.sendMessage(tabId, { type: "inject-ghost" });
+
+      const distractions: string[] = res.distractionList || [];
+      if (distractions.some(domain => tab.url!.includes(domain))) {
+        const hostname = new URL(tab.url!).hostname;
+        chrome.notifications.create({
+          type: "basic",
+          iconUrl: "ghost.png",
+          title: "👻 Focus Alert!",
+          message: `Avoid ${hostname} — it's a distraction!`,
+          priority: 2,
+        });
       }
     });
   });
@@ -276,24 +282,24 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== "complete" || !tab.url) return;
 
-  chrome.storage.local.get(["focusSessionActive", "distractionList"], (res) => {
-    if (res.focusSessionActive) {
-      chrome.tabs.sendMessage(tabId, { type: "inject-ghost" });
+  chrome.storage.local.get(["focusSessionActive", "breakActive", "distractionList"], (res) => {
+    const isFocus = res.focusSessionActive === true;
+    const isBreak = res.breakActive === true;
 
-      const distractions: string[] = res.distractionList || [];
-      if (distractions.some(domain => tab.url!.includes(domain))) {
-        if (tab.url) {
-  const hostname = new URL(tab.url).hostname;
-  chrome.notifications.create({
-    type: "basic",
-    iconUrl: "ghost.png",
-    title: "👻 Focus Alert!",
-    message: `Avoid ${hostname} — it's a distraction!`,
-    priority: 2,
-  });
-}
-      }
+    if (!isFocus || isBreak) return;
+
+    chrome.tabs.sendMessage(tabId, { type: "inject-ghost" });
+
+    const distractions: string[] = res.distractionList || [];
+    if (distractions.some(domain => tab.url!.includes(domain))) {
+      const hostname = new URL(tab.url!).hostname;
+      chrome.notifications.create({
+        type: "basic",
+        iconUrl: "ghost.png",
+        title: "👻 Focus Alert!",
+        message: `Avoid ${hostname} — it's a distraction!`,
+        priority: 2,
+      });
     }
   });
 });
-
